@@ -60,7 +60,7 @@ func newClient(server, credential string) *client {
 	return &client{
 		server:     strings.TrimRight(server, "/"),
 		credential: credential,
-		// 平台最多挂起 50 秒，超时要比它长，否则会在领取后丢掉响应
+		// 超时要比平台的最长挂起时间长，否则会在领取后丢掉响应
 		poller: &http.Client{Timeout: 80 * time.Second},
 		http:   &http.Client{Timeout: 30 * time.Second},
 	}
