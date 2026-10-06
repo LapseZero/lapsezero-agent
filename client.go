@@ -15,6 +15,7 @@ const (
 	codeHostInactive      = 47003
 	codeCredentialInvalid = 47005
 	codeAttemptStale      = 47006
+	codeInternalError     = 50001
 )
 
 type agentInfo struct {
@@ -88,19 +89,23 @@ func (c *client) call(hc *http.Client, path string, body any, out any) error {
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
-	}
 	var envelope struct {
 		Code    int             `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
+	// 平台的业务错误也以非 200 状态返回，错误码在响应体里，所以先看响应体
 	if err := json.Unmarshal(raw, &envelope); err != nil {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
+		}
 		return fmt.Errorf("invalid response: %w", err)
 	}
 	if envelope.Code != 0 {
 		return &apiError{Code: envelope.Code, Message: envelope.Message}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
 	}
 	if out == nil {
 		return nil

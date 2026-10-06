@@ -142,8 +142,10 @@ func (a *agent) report(attemptID string, r result) {
 		if err == nil {
 			return
 		}
+		// 平台内部错误是暂时的，和网络失败一样重试
 		var apiErr *apiError
-		if errors.As(err, &apiErr) || time.Now().After(deadline) {
+		rejected := errors.As(err, &apiErr) && apiErr.Code != codeInternalError
+		if rejected || time.Now().After(deadline) {
 			log.Printf("report result for %s: %v", attemptID, err)
 			return
 		}
