@@ -13,6 +13,8 @@ The deploy agent for [LapseZero](https://lapsezero.com). It runs on your server 
    - if a write or the command fails, restores the original files and runs the command again so the service goes back to the old certificate.
 4. Before writing, it saves the original contents to `/var/lib/lapsezero-agent/journal.json` (mode 0600). If the agent dies mid-deployment, it restores those files on the next start.
 
+When you click "Discover sites" in the console, the agent runs `nginx -T` once and reports, for each HTTPS server block, its `server_name`s, certificate and key paths, a suggested reload command, and public details of the current certificate (names, issuer, expiry, fingerprint). It never reads or sends private key contents. It also flags certificates that certbot or acme.sh already renews, since both tools would overwrite each other's files. Nothing is changed on the server until you confirm deploy targets in the console.
+
 The post-deploy command is configured in the LapseZero console and runs as root on this server. Only install the agent on servers whose LapseZero account you trust to run that command.
 
 ## Commands
