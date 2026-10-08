@@ -30,12 +30,12 @@ Logs go to the journal: `journalctl -u lapsezero-agent`.
 ## Build
 
 ```
-./build.sh   # outputs Linux amd64/arm64 binaries, install.sh and SHA256SUMS to dist/
+./build.sh   # outputs Linux amd64/arm64 binaries, SHA256SUMS and github/ and gitee/ install.sh to dist/
 go test ./...
 ```
 
 ## Release
 
-Tag the version, run `VERSION=<tag> ./build.sh`, and upload every file in `dist/` as assets of the same tag on both GitHub and Gitee. The install command downloads `install.sh`, the binary and `SHA256SUMS` from that release.
+Tag the version and run `VERSION=<tag> ./build.sh`. Upload the binaries and `SHA256SUMS` to the same tag on both GitHub and Gitee, then upload `dist/github/install.sh` to GitHub and `dist/gitee/install.sh` to Gitee, each as `install.sh`. Each script has its own release URL built in and downloads the binary and `SHA256SUMS` from there, so uploading the wrong one sends users to the other platform.
 
 Requires Linux with systemd. Licensed under MIT.
