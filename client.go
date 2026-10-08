@@ -36,9 +36,14 @@ type task struct {
 	PostCommand *string    `json:"postCommand"`
 }
 
+type scanRequest struct {
+	ScanID string `json:"scanId"`
+}
+
 type pollResponse struct {
-	Task         *task   `json:"task"`
-	RetryAfterMs float64 `json:"retryAfterMs"`
+	Task         *task        `json:"task"`
+	Scan         *scanRequest `json:"scan"`
+	RetryAfterMs float64      `json:"retryAfterMs"`
 }
 
 // apiError 是平台明确返回的业务错误，区别于网络错误
@@ -139,4 +144,8 @@ func (c *client) renewLease(attemptID string) error {
 
 func (c *client) submitResult(attemptID string, r result) error {
 	return c.call(c.http, "/attempts/"+attemptID+"/result", r, nil)
+}
+
+func (c *client) submitScan(scanID string, r scanResult) error {
+	return c.call(c.http, "/scans/"+scanID+"/result", r, nil)
 }

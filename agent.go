@@ -57,6 +57,10 @@ func (a *agent) run() {
 		}
 		backoff = 0
 
+		if resp.Scan != nil {
+			a.scan(resp.Scan.ScanID)
+			continue
+		}
 		if resp.Task == nil {
 			wait := time.Duration(resp.RetryAfterMs) * time.Millisecond
 			// 防止异常情况下立即返回的空响应造成忙等
@@ -107,6 +111,15 @@ func (a *agent) execute(t task) {
 	}
 	if err := a.journal.remove(); err != nil {
 		log.Fatalf("remove journal: %v", err)
+	}
+}
+
+// 扫描只读，失败了用户在控制台重新扫描即可，所以上报只尝试一次
+func (a *agent) scan(scanID string) {
+	r := scanNginx()
+	log.Printf("nginx scan finished: %s %s (%d sites)", r.Status, r.Error, len(r.Sites))
+	if err := a.client.submitScan(scanID, r); err != nil {
+		log.Printf("report scan result: %v", err)
 	}
 }
 
