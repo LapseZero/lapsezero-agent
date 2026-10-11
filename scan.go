@@ -31,6 +31,8 @@ type scanResult struct {
 	Error         string     `json:"error,omitempty"`
 	ReloadCommand string     `json:"reloadCommand"`
 	Sites         []scanSite `json:"sites"`
+	// 本机运行着 1Panel 时才有
+	OnePanel *onePanelScan `json:"onePanel,omitempty"`
 }
 
 type scanSite struct {
@@ -108,6 +110,8 @@ type certPair struct {
 	serverNames []string
 	certPath    string
 	keyPath     string
+	// 本机连接地址，部署后用来确认 Nginx 已换上新证书
+	listens []string
 }
 
 // parseNginxDump 解析 nginx -T 的输出，按证书和私钥路径归并 http 下的 server 块。
@@ -131,6 +135,8 @@ func parseNginxDump(dump []byte) []certPair {
 		certs, keys []string
 		serverNames []string
 		ssl         bool
+		// listen 的地址参数；用 ssl on 而不是 listen ... ssl 开启 TLS 时只能看 listens
+		listens, sslListens []string
 	}
 	var stack []*block
 	var httpCerts, httpKeys []string
@@ -165,10 +171,19 @@ func parseNginxDump(dump []byte) []certPair {
 					p.serverNames = append(p.serverNames, n)
 				}
 			}
+			listens := b.sslListens
+			if len(listens) == 0 {
+				listens = b.listens
+			}
+			for _, l := range listens {
+				if a := dialAddress(l); a != "" && !contains(p.listens, a) {
+					p.listens = append(p.listens, a)
+				}
+			}
 		}
 	}
 
-	for _, tok := range tokenizeNginx(dump) {
+	for _, tok := range expandIncludes(dump, resolve) {
 		switch tok {
 		case "{":
 			name := ""
@@ -210,6 +225,13 @@ func parseNginxDump(dump []byte) []certPair {
 					if cur.name == "server" && (contains(args[2:], "ssl") || contains(args[2:], "quic")) {
 						cur.ssl = true
 					}
+					// quic 走 UDP，没法用 TLS 连接检查
+					if cur.name == "server" && !contains(args[2:], "quic") {
+						cur.listens = append(cur.listens, args[1])
+						if contains(args[2:], "ssl") {
+							cur.sslListens = append(cur.sslListens, args[1])
+						}
+					}
 				case "ssl":
 					if cur.name == "server" && args[1] == "on" {
 						cur.ssl = true
@@ -236,6 +258,50 @@ func parseNginxDump(dump []byte) []certPair {
 		pairs = append(pairs, *byPaths[k])
 	}
 	return pairs
+}
+
+// nginx -T 不在原位展开 include，而是先输出主配置，再逐个附上被引用的文件。
+// 按文件切开后从主配置开始把 include 换成对应文件的记号，conf.d 等处的 server 块才会落在 http 里
+func expandIncludes(dump []byte, resolve func(string) string) []string {
+	const header = "# configuration file "
+	files := map[string][]byte{}
+	var names []string
+	cur := ""
+	for _, line := range bytes.SplitAfter(dump, []byte("\n")) {
+		if rest, ok := bytes.CutPrefix(line, []byte(header)); ok {
+			cur = strings.TrimSuffix(strings.TrimSpace(string(rest)), ":")
+			names = append(names, cur)
+			continue
+		}
+		files[cur] = append(files[cur], line...)
+	}
+	if len(names) == 0 {
+		return tokenizeNginx(dump)
+	}
+
+	var expand func(name string) []string
+	expand = func(name string) []string {
+		var out []string
+		toks := tokenizeNginx(files[name])
+		atDirective := true
+		for i := 0; i < len(toks); i++ {
+			if atDirective && toks[i] == "include" && i+2 < len(toks) && toks[i+2] == ";" {
+				pattern := resolve(toks[i+1])
+				// nginx 按通配符排序后的顺序解析并输出文件，names 的顺序与之一致
+				for _, n := range names {
+					if ok, _ := filepath.Match(pattern, n); ok {
+						out = append(out, expand(n)...)
+					}
+				}
+				i += 2
+				continue
+			}
+			out = append(out, toks[i])
+			atDirective = toks[i] == "{" || toks[i] == "}" || toks[i] == ";"
+		}
+		return out
+	}
+	return expand(names[0])
 }
 
 // tokenizeNginx 按 nginx 配置语法切分：去掉注释，处理引号和转义，把 { } ; 作为独立记号
@@ -290,6 +356,10 @@ func readCertSummary(path string) *certSummary {
 	if err != nil {
 		return nil
 	}
+	return certSummaryFromPEM(data)
+}
+
+func certSummaryFromPEM(data []byte) *certSummary {
 	for {
 		var b *pem.Block
 		b, data = pem.Decode(data)
@@ -308,13 +378,9 @@ func readCertSummary(path string) *certSummary {
 		if len(names) == 0 && cert.Subject.CommonName != "" {
 			names = []string{cert.Subject.CommonName}
 		}
-		issuer := cert.Issuer.CommonName
-		if len(cert.Issuer.Organization) > 0 {
-			issuer = cert.Issuer.Organization[0]
-		}
 		return &certSummary{
 			SubjectAltNames:   names,
-			Issuer:            issuer,
+			Issuer:            issuerName(cert),
 			NotAfter:          cert.NotAfter.UTC(),
 			FingerprintSha256: strings.ToUpper(hex.EncodeToString(sum[:])),
 		}

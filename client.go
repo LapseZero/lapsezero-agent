@@ -34,10 +34,14 @@ type task struct {
 	Label       string     `json:"label"`
 	Files       []taskFile `json:"files"`
 	PostCommand *string    `json:"postCommand"`
+	// 部署到 1Panel 时只有这一项，Files 为空
+	OnePanel *onePanelTask `json:"onePanel"`
 }
 
 type scanRequest struct {
 	ScanID string `json:"scanId"`
+	// 用户在控制台填写过 1Panel API Key 时才有
+	OnePanelAPIKey *string `json:"onePanelApiKey"`
 }
 
 type pollResponse struct {

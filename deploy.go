@@ -14,6 +14,8 @@ type result struct {
 	Error   string   `json:"error,omitempty"`
 	Files   []string `json:"files,omitempty"`
 	Message string   `json:"message,omitempty"`
+	// 只在部署成功时带上；nil 表示没有可检查的 Nginx 站点
+	LiveCheck *liveCheck `json:"liveCheck,omitempty"`
 }
 
 type fileSpec struct {
