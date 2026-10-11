@@ -15,6 +15,8 @@ The deploy agent for [LapseZero](https://lapsezero.com). It runs on your server 
 
 When you click "Discover sites" in the console, the agent runs `nginx -T` once and reports, for each HTTPS server block, its `server_name`s, certificate and key paths, a suggested reload command, and public details of the current certificate (names, issuer, expiry, fingerprint). It never reads or sends private key contents. It also flags certificates that certbot or acme.sh already renews, since both tools would overwrite each other's files. Nothing is changed on the server until you confirm deploy targets in the console.
 
+If the server runs [1Panel](https://1panel.pro) (v1 or v2), the scan also lists its HTTPS websites through the local 1Panel API. 1Panel keeps website certificates in its own database and rewrites the files from it whenever a website's settings are saved, so for these websites the agent doesn't write files: it updates the certificate record in 1Panel, and 1Panel applies it to every website using that record and reloads OpenResty. If 1Panel reports an error, the agent writes the previous certificate back. This needs a 1Panel API key with `127.0.0.1` in its allowlist, entered in the LapseZero console; the agent finds the panel port from the running `1panel-core` (v2) or `1panel` (v1) process.
+
 The post-deploy command is configured in the LapseZero console and runs as root on this server. Only install the agent on servers whose LapseZero account you trust to run that command.
 
 ## Commands

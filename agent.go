@@ -58,7 +58,7 @@ func (a *agent) run() {
 		backoff = 0
 
 		if resp.Scan != nil {
-			a.scan(resp.Scan.ScanID)
+			a.scan(*resp.Scan)
 			continue
 		}
 		if resp.Task == nil {
@@ -75,6 +75,10 @@ func (a *agent) run() {
 }
 
 func (a *agent) execute(t task) {
+	if t.OnePanel != nil {
+		a.executeOnePanel(t)
+		return
+	}
 	files := make([]fileSpec, 0, len(t.Files))
 	for _, f := range t.Files {
 		content, err := base64.StdEncoding.DecodeString(f.ContentBase64)
@@ -94,11 +98,17 @@ func (a *agent) execute(t task) {
 	stop := make(chan struct{})
 	go a.keepLease(t.AttemptID, stop, &stale)
 	r, err := apply(a.journal, t.AttemptID, files, postCommand, runPostCommand)
+	if err == nil && r.Status == "SUCCESS" {
+		r.LiveCheck = checkLive(files)
+	}
 	close(stop)
 	if err != nil {
 		r = result{Status: "FAILED", Error: "INTERNAL", Message: err.Error()}
 	}
 	log.Printf("deployment of %s finished: %s %s", t.Label, r.Status, r.Error)
+	if r.LiveCheck != nil {
+		log.Printf("live check on %s (%s): %s %s", r.LiveCheck.Address, r.LiveCheck.ServerName, r.LiveCheck.Status, r.LiveCheck.ErrorCode)
+	}
 
 	if err == nil {
 		// 结果可能送不到平台，先记下来，重启后补报
@@ -114,11 +124,36 @@ func (a *agent) execute(t task) {
 	}
 }
 
+// 1Panel 部署只调用一次面板 API，没有要恢复的文件，不写恢复记录
+func (a *agent) executeOnePanel(t task) {
+	log.Printf("deploying %s to 1Panel certificate %d", t.Label, t.OnePanel.SslID)
+	var stale atomic.Bool
+	stop := make(chan struct{})
+	go a.keepLease(t.AttemptID, stop, &stale)
+	r := deployOnePanel(*t.OnePanel)
+	close(stop)
+	log.Printf("deployment of %s finished: %s %s %s", t.Label, r.Status, r.Error, r.Message)
+	if r.LiveCheck != nil {
+		log.Printf("live check on %s (%s): %s %s", r.LiveCheck.Address, r.LiveCheck.ServerName, r.LiveCheck.Status, r.LiveCheck.ErrorCode)
+	}
+	if !stale.Load() {
+		a.report(t.AttemptID, r)
+	}
+}
+
 // 扫描只读，失败了用户在控制台重新扫描即可，所以上报只尝试一次
-func (a *agent) scan(scanID string) {
+func (a *agent) scan(req scanRequest) {
 	r := scanNginx()
 	log.Printf("nginx scan finished: %s %s (%d sites)", r.Status, r.Error, len(r.Sites))
-	if err := a.client.submitScan(scanID, r); err != nil {
+	if addr := onePanelAddress(); addr != "" {
+		r.OnePanel = scanOnePanel(addr, req.OnePanelAPIKey)
+		log.Printf("1Panel scan finished: %s %s (%d sites)", r.OnePanel.Status, r.OnePanel.Message, len(r.OnePanel.Sites))
+		// 1Panel 的 OpenResty 在容器里，宿主机上本来就没有 Nginx
+		if r.Status == "FAILED" && r.Error == "NGINX_NOT_FOUND" {
+			r = scanResult{Status: "SUCCESS", Sites: []scanSite{}, OnePanel: r.OnePanel}
+		}
+	}
+	if err := a.client.submitScan(req.ScanID, r); err != nil {
 		log.Printf("report scan result: %v", err)
 	}
 }
