@@ -97,8 +97,14 @@ func (a *agent) execute(t task) {
 	var stale atomic.Bool
 	stop := make(chan struct{})
 	go a.keepLease(t.AttemptID, stop, &stale)
-	r, err := apply(a.journal, t.AttemptID, files, postCommand, runPostCommand)
-	if err == nil && r.Status == "SUCCESS" {
+	var r result
+	var err error
+	if t.NPM != nil {
+		r, err = deployNpm(*t.NPM)
+	} else {
+		r, err = apply(a.journal, t.AttemptID, files, postCommand, runPostCommand)
+	}
+	if t.NPM == nil && err == nil && r.Status == "SUCCESS" {
 		r.LiveCheck = checkLive(files)
 	}
 	close(stop)
@@ -144,6 +150,12 @@ func (a *agent) executeOnePanel(t task) {
 // 扫描只读，失败了用户在控制台重新扫描即可，所以上报只尝试一次
 func (a *agent) scan(req scanRequest) {
 	r := scanNginx()
+	r.NPM = scanNpm(req.NPMCredentials)
+	if len(r.NPM) > 0 && r.Error == "NGINX_NOT_FOUND" {
+		r.Status = "SUCCESS"
+		r.Error = ""
+		r.Sites = []scanSite{}
+	}
 	log.Printf("nginx scan finished: %s %s (%d sites)", r.Status, r.Error, len(r.Sites))
 	if addr := onePanelAddress(); addr != "" {
 		r.OnePanel = scanOnePanel(addr, req.OnePanelAPIKey)

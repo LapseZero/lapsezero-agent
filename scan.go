@@ -33,6 +33,7 @@ type scanResult struct {
 	Sites         []scanSite `json:"sites"`
 	// 本机运行着 1Panel 时才有
 	OnePanel *onePanelScan `json:"onePanel,omitempty"`
+	NPM      []npmScan     `json:"npm,omitempty"`
 }
 
 type scanSite struct {
