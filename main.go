@@ -31,6 +31,8 @@ func main() {
 		cmdEnroll(os.Args[2:])
 	case "run":
 		cmdRun(os.Args[2:])
+	case "uninstall":
+		cmdUninstall()
 	case "version":
 		fmt.Println(version)
 	default:
@@ -43,6 +45,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `Usage:
   lapsezero-agent enroll --server <url> --token <token> [--config <path>]
   lapsezero-agent run [--config <path>] [--state-dir <dir>]
+  lapsezero-agent uninstall
   lapsezero-agent version`)
 }
 
@@ -77,10 +80,6 @@ func cmdRun(args []string) {
 	stateDir := fs.String("state-dir", defaultStateDir, "directory for lock and recovery journal")
 	_ = fs.Parse(args)
 
-	cfg, err := loadConfig(*configPath)
-	if err != nil {
-		log.Fatalf("load config: %v", err)
-	}
 	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
 		log.Fatalf("create state dir: %v", err)
 	}
@@ -90,10 +89,24 @@ func cmdRun(args []string) {
 	}
 	defer unlock()
 
+	up, err := newUpdater(*stateDir)
+	if err != nil {
+		log.Fatalf("locate executable: %v", err)
+	}
+	if err := up.checkPending(); err != nil {
+		log.Fatalf("check pending update: %v", err)
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
 	a := &agent{
 		client:  newClient(cfg.Server, cfg.Credential),
 		journal: journalStore{path: filepath.Join(*stateDir, "journal.json")},
 		info:    hostInfo(),
+		updater: up,
 	}
 	log.Printf("lapsezero-agent %s started, server %s", version, cfg.Server)
 	a.run()

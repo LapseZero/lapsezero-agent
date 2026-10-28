@@ -61,6 +61,8 @@ EXPECTED=$(grep " $BINARY\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)
 [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$(sha256 "$TMP/$BINARY")" ] || fail "checksum mismatch"
 
 $SUDO install -m 0755 "$TMP/$BINARY" /usr/local/bin/lapsezero-agent
+# 重新安装覆盖了二进制，自动更新留下的记录和旧版本已不对应，留着会被当成更新失败而换回
+$SUDO rm -f /var/lib/lapsezero-agent/update.json /usr/local/bin/lapsezero-agent.prev
 $SUDO /usr/local/bin/lapsezero-agent enroll --server "$SERVER" --token "$TOKEN"
 
 $SUDO tee /etc/systemd/system/lapsezero-agent.service >/dev/null <<'UNIT'
@@ -73,6 +75,8 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/lapsezero-agent run
 Restart=always
 RestartSec=10
+# 平台上已删除的客户端以 3 退出，不再拉起
+RestartPreventExitStatus=3
 
 [Install]
 WantedBy=multi-user.target

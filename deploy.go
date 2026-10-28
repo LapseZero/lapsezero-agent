@@ -45,8 +45,13 @@ func (s journalStore) save(j journal) error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	return writeFileAtomic(s.path, data, 0o600)
+}
+
+// 先写临时文件并落盘再改名，崩溃时文件要么是旧内容要么是完整的新内容
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 	if err != nil {
 		return err
 	}
@@ -61,7 +66,7 @@ func (s journalStore) save(j journal) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	return os.Rename(tmp, path)
 }
 
 func (s journalStore) load() (*journal, error) {

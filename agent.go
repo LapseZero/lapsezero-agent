@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"math/rand/v2"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
@@ -15,14 +16,18 @@ const (
 	leaseInterval      = 30 * time.Second
 	postCommandTimeout = 5 * time.Minute
 	maxBackoff         = time.Minute
-	// 凭证失效或主机被停用时，等用户在控制台处理，不必频繁重试
-	unauthorizedWait = 5 * time.Minute
+	// 主机被停用时，等用户在控制台重新启用，不必频繁重试
+	inactiveWait = 5 * time.Minute
+	// 凭证失效说明主机已删除、已在别处重新注册或账户已注销，旧凭证不会再变回有效。
+	// 安装脚本写入的 systemd 服务配置了 RestartPreventExitStatus，以这个码退出后不再被拉起
+	exitRevoked = 3
 )
 
 type agent struct {
 	client  *client
 	journal journalStore
 	info    agentInfo
+	updater *updater
 }
 
 func (a *agent) run() {
@@ -41,13 +46,24 @@ func (a *agent) run() {
 
 	backoff := time.Duration(0)
 	for {
+		a.updater.checkDeadline()
 		started := time.Now()
 		resp, err := a.client.poll(a.info)
+		var apiErr *apiError
+		errors.As(err, &apiErr)
+		// 平台认出了这个客户端才算新版本可用；参数错误、平台内部错误不算，请求格式不兼容时仍能换回
+		if err == nil || apiErr != nil && (apiErr.Code == codeCredentialInvalid || apiErr.Code == codeHostInactive) {
+			a.updater.confirm()
+		}
 		if err != nil {
-			var apiErr *apiError
-			if errors.As(err, &apiErr) && (apiErr.Code == codeCredentialInvalid || apiErr.Code == codeHostInactive) {
+			if apiErr != nil && apiErr.Code == codeCredentialInvalid {
 				log.Printf("poll rejected: %v", apiErr)
-				time.Sleep(unauthorizedWait)
+				log.Printf("this agent has been deleted or re-enrolled in the LapseZero console, stopping. To remove it from this server, run `lapsezero-agent uninstall` as root")
+				os.Exit(exitRevoked)
+			}
+			if apiErr != nil && apiErr.Code == codeHostInactive {
+				log.Printf("poll rejected: %v", apiErr)
+				time.Sleep(inactiveWait)
 				continue
 			}
 			backoff = min(max(backoff*2, time.Second), maxBackoff)
@@ -62,6 +78,9 @@ func (a *agent) run() {
 			continue
 		}
 		if resp.Task == nil {
+			if resp.Update != nil {
+				a.updater.apply(*resp.Update)
+			}
 			wait := time.Duration(resp.RetryAfterMs) * time.Millisecond
 			// 防止异常情况下立即返回的空响应造成忙等
 			if wait == 0 && time.Since(started) < time.Second {

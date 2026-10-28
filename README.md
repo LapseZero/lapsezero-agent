@@ -23,6 +23,12 @@ For NPM, LapseZero takes over existing **Custom** certificate records. It preser
 
 Before uploading it runs `nginx -t`, so an existing configuration error stops the deployment without changing anything. If the upload is accepted but the reload fails, the agent uploads the previous certificate again and reloads. NPM rejects expired certificates, so a previous certificate that has already expired cannot be restored; the deployment then fails with an error and the agent keeps handling other tasks. Private keys read from NPM are never sent back to LapseZero. Tested with official NPM 2.16.0, including shared host bindings, certificate rotation, chain formats and rollback.
 
+## Updates and removal
+
+The agent updates itself. When LapseZero reports a newer release, the agent waits until it's idle, downloads the release's `SHA256SUMS` and `SHA256SUMS.sig`, verifies the signature against the Ed25519 public key built into the binary, checks the binary's SHA-256, and runs the new binary's `version` to confirm it is the expected release. It then keeps the current binary as `/usr/local/bin/lapsezero-agent.prev`, swaps in the new one and restarts. If the new version fails to start three times in a row, or can't reach LapseZero within five minutes, the agent switches back to the previous binary and skips that version for 24 hours.
+
+If the agent is deleted or re-enrolled in the LapseZero console, its credential stops working for good. The agent then exits and the systemd service doesn't restart it. It never deletes itself; to remove it, run `lapsezero-agent uninstall` as root. Uninstall refuses to proceed while an interrupted deployment still has original files to restore.
+
 The post-deploy command is configured in the LapseZero console and runs as root on this server. Only install the agent on servers whose LapseZero account you trust to run that command.
 
 ## Commands
@@ -30,6 +36,7 @@ The post-deploy command is configured in the LapseZero console and runs as root 
 ```
 lapsezero-agent enroll --server <url> --token <token>
 lapsezero-agent run
+lapsezero-agent uninstall
 lapsezero-agent version
 ```
 
@@ -38,12 +45,12 @@ Logs go to the journal: `journalctl -u lapsezero-agent`.
 ## Build
 
 ```
-./build.sh   # outputs Linux amd64/arm64 binaries, SHA256SUMS and github/ and gitee/ install.sh to dist/
+./build.sh   # outputs Linux amd64/arm64 binaries, SHA256SUMS, SHA256SUMS.sig and github/ and gitee/ install.sh to dist/
 go test ./...
 ```
 
 ## Release
 
-Tag the version and run `VERSION=<tag> ./build.sh`. Upload the binaries and `SHA256SUMS` to the same tag on both GitHub and Gitee, then upload `dist/github/install.sh` to GitHub and `dist/gitee/install.sh` to Gitee, each as `install.sh`. Each script has its own release URL built in and downloads the binary and `SHA256SUMS` from there, so uploading the wrong one sends users to the other platform.
+Tag the version and run `VERSION=<tag> ./build.sh`. It signs `SHA256SUMS` with the release key at `~/.config/lapsezero/agent-signing.key` (override with `SIGNING_KEY`); agents only auto-update to releases signed with that key. Upload the binaries, `SHA256SUMS` and `SHA256SUMS.sig` to the same tag on both GitHub and Gitee, then upload `dist/github/install.sh` to GitHub and `dist/gitee/install.sh` to Gitee, each as `install.sh`. Each script has its own release URL built in and downloads the binary and `SHA256SUMS` from there, so uploading the wrong one sends users to the other platform.
 
 Requires Linux with systemd. Licensed under MIT.

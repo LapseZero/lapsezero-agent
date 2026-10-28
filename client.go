@@ -50,6 +50,8 @@ type pollResponse struct {
 	Task         *task        `json:"task"`
 	Scan         *scanRequest `json:"scan"`
 	RetryAfterMs float64      `json:"retryAfterMs"`
+	// 客户端版本落后时平台才下发
+	Update *updateInfo `json:"update"`
 }
 
 // apiError 是平台明确返回的业务错误，区别于网络错误
