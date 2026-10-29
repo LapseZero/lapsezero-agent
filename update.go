@@ -47,6 +47,8 @@ const exitRestart = 0
 type updateInfo struct {
 	Version    string `json:"version"`
 	ReleaseURL string `json:"releaseUrl"`
+	// GitHub 和 Gitee 两个 Release，账号所在站点在前；主机网络不一定访问得了账号站点那一个
+	ReleaseURLs []string `json:"releaseUrls"`
 }
 
 // 替换二进制前落盘；新版本第一次 poll 成功后删除，删除前的每次启动都计数
@@ -171,24 +173,31 @@ func (u *updater) apply(info updateInfo) {
 	} else if ok && failed.Version == info.Version && time.Since(failed.At) < failedUpdateRetry {
 		return
 	}
+	urls := info.ReleaseURLs
+	if len(urls) == 0 {
+		urls = []string{info.ReleaseURL}
+	}
 	log.Printf("updating from %s to %s", version, info.Version)
-	if err := u.install(info); err != nil {
-		log.Printf("update to %s failed: %v", info.Version, err)
-		u.nextTry = time.Now().Add(updateErrorRetry)
+	for _, url := range urls {
+		if err := u.install(info.Version, url); err != nil {
+			log.Printf("update to %s from %s failed: %v", info.Version, url, err)
+			continue
+		}
+		log.Printf("installed %s, restarting", info.Version)
+		u.exit(exitRestart)
 		return
 	}
-	log.Printf("installed %s, restarting", info.Version)
-	u.exit(exitRestart)
+	u.nextTry = time.Now().Add(updateErrorRetry)
 }
 
-func (u *updater) install(info updateInfo) error {
+func (u *updater) install(target, releaseURL string) error {
 	binary := "lapsezero-agent-linux-" + runtime.GOARCH
-	expected, err := u.verifiedChecksum(info.ReleaseURL, binary)
+	expected, err := u.verifiedChecksum(releaseURL, binary)
 	if err != nil {
 		return err
 	}
 	defer removeIfExists(u.newPath())
-	if err := u.download(info.ReleaseURL+"/"+binary, u.newPath(), expected); err != nil {
+	if err := u.download(releaseURL+"/"+binary, u.newPath(), expected); err != nil {
 		return err
 	}
 	// 签名的二进制自己报出的版本才可信，也能挡住拿旧版本冒充新版本
@@ -198,13 +207,13 @@ func (u *updater) install(info updateInfo) error {
 	if err != nil {
 		return fmt.Errorf("run new binary: %w", err)
 	}
-	if got := strings.TrimSpace(string(out)); got != info.Version {
+	if got := strings.TrimSpace(string(out)); got != target {
 		return fmt.Errorf("new binary reports version %q", got)
 	}
 	if err := copyFile(u.exe, u.prevPath()); err != nil {
 		return fmt.Errorf("keep previous binary: %w", err)
 	}
-	if err := writeJSON(u.markerPath(), updateMarker{From: version, To: info.Version}); err != nil {
+	if err := writeJSON(u.markerPath(), updateMarker{From: version, To: target}); err != nil {
 		return err
 	}
 	if err := os.Rename(u.newPath(), u.exe); err != nil {

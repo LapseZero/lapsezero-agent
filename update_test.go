@@ -111,6 +111,20 @@ func TestApplyInstallsSignedUpdateAndKeepsPrevious(t *testing.T) {
 	}
 }
 
+// 账号站点的 Release 在主机网络里访问不了时，要换另一个站点更新，而不是一直停在旧版本
+func TestApplyFallsBackToNextRelease(t *testing.T) {
+	f := newUpdateFixture(t, "v1.0.0")
+	unreachable := httptest.NewServer(http.NotFoundHandler())
+	unreachable.Close()
+	url := serveRelease(t, "v1.1.0", trustKey(t))
+
+	f.u.apply(updateInfo{Version: "v1.1.0", ReleaseURL: unreachable.URL, ReleaseURLs: []string{unreachable.URL, url}})
+
+	if len(f.exits) != 1 || mustRead(t, f.u.exe) != "#!/bin/sh\necho v1.1.0\n" {
+		t.Fatalf("expected update from the second release, exits=%v", f.exits)
+	}
+}
+
 func TestApplyRejectsUntrustedOrMislabelledRelease(t *testing.T) {
 	cases := map[string]func(t *testing.T) string{
 		"signed by another key": func(t *testing.T) string {
