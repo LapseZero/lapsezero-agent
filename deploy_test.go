@@ -4,7 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // 部署必须要么完整替换，要么让文件保持原样
@@ -138,5 +140,14 @@ func TestRecoveryAfterCrashRestoresOriginals(t *testing.T) {
 	}
 	if left, _ := store.load(); left != nil {
 		t.Fatal("journal should be removed")
+	}
+}
+
+// 超出平台上限的 message 会让整个部署结果被拒收
+func TestFailureMessageFitsPlatformLimit(t *testing.T) {
+	long := strings.Repeat("证书", 1000) + "\nexit status 1"
+	got := failureMessage(errors.New(long))
+	if len(got) > maxMessageBytes || !utf8.ValidString(got) || !strings.HasSuffix(got, "exit status 1") {
+		t.Fatalf("len=%d valid=%v suffix=%q", len(got), utf8.ValidString(got), got[len(got)-20:])
 	}
 }

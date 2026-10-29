@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 // 与平台 agentResultSchema 一致
@@ -110,7 +111,7 @@ func apply(store journalStore, attemptID string, files []fileSpec, postCommand s
 		case errors.Is(err, fs.ErrNotExist):
 			backups = append(backups, backup{Path: f.Path})
 		default:
-			return result{Status: "FAILED", Error: "FILE_READ_FAILED"}, nil
+			return result{Status: "FAILED", Error: "FILE_READ_FAILED", Message: failureMessage(err)}, nil
 		}
 	}
 
@@ -125,7 +126,7 @@ func apply(store journalStore, attemptID string, files []fileSpec, postCommand s
 			if unrestored := restore(backups, touched); len(unrestored) > 0 {
 				return result{Status: "FAILED", Error: "ROLLBACK_FAILED", Files: unrestored}, nil
 			}
-			return result{Status: "ROLLED_BACK", Error: "FILE_WRITE_FAILED"}, nil
+			return result{Status: "ROLLED_BACK", Error: "FILE_WRITE_FAILED", Message: failureMessage(err)}, nil
 		}
 	}
 
@@ -134,13 +135,29 @@ func apply(store journalStore, attemptID string, files []fileSpec, postCommand s
 			if unrestored := restore(backups, touched); len(unrestored) > 0 {
 				return result{Status: "FAILED", Error: "ROLLBACK_FAILED", Files: unrestored}, nil
 			}
-			if err := run(postCommand); err != nil {
-				return result{Status: "FAILED", Error: "ROLLBACK_POST_COMMAND_FAILED"}, nil
+			if rerunErr := run(postCommand); rerunErr != nil {
+				return result{Status: "FAILED", Error: "ROLLBACK_POST_COMMAND_FAILED", Message: failureMessage(rerunErr)}, nil
 			}
-			return result{Status: "ROLLED_BACK", Error: "POST_COMMAND_FAILED"}, nil
+			return result{Status: "ROLLED_BACK", Error: "POST_COMMAND_FAILED", Message: failureMessage(err)}, nil
 		}
 	}
 	return result{Status: "SUCCESS"}, nil
+}
+
+// 平台的 message 上限是 2000 个字符，超出整个结果都会被拒收；报错一般在末尾，只保留最后一段
+const maxMessageBytes = 2000
+
+func failureMessage(err error) string {
+	s := err.Error()
+	if len(s) <= maxMessageBytes {
+		return s
+	}
+	const ellipsis = "…"
+	start := len(s) - maxMessageBytes + len(ellipsis)
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return ellipsis + s[start:]
 }
 
 // 原地写入而不是写临时文件再 rename，以保留文件属主和软链接

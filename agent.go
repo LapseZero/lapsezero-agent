@@ -240,6 +240,10 @@ func runPostCommand(command string) error {
 	if len(out) > 0 {
 		log.Printf("post command output:\n%s", tail(out, 4096))
 	}
+	if err != nil && len(out) > 0 {
+		// 平台把输出展示给用户排查，退出状态放在最后，截断时保留
+		return errors.New(string(out) + "\n" + err.Error())
+	}
 	return err
 }
 
