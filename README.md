@@ -44,29 +44,47 @@ Logs go to the journal: `journalctl -u lapsezero-agent`.
 
 ## Windows IIS
 
-The Windows client targets **Windows Server 2022 amd64**, with IIS on the same machine. It has passed end-to-end acceptance on a Server 2022 test machine, including recovery after forced kills and reboots.
+Use the Windows agent with **Windows Server 2022 x64** and IIS on the same server.
 
-Run the console's one-line PowerShell install command as Administrator. It downloads `lapsezero-agent-windows-amd64.exe` to a temporary directory and runs:
+1. Add an agent in the LapseZero console and choose Windows.
+2. Open PowerShell as Administrator on the server and run the install command shown in the console.
+3. Click **Discover sites**, select the HTTPS bindings you want to renew, and enable automatic renewal. Disable other certificate renewal tools for those sites.
 
-```powershell
-.\lapsezero-agent-windows-amd64.exe install --server <url> --token <token>
-```
+The install command downloads `lapsezero-agent-windows-amd64.exe` and runs `install --server <url> --token <token>`. The agent starts automatically, including after a server restart, without anyone signing in.
 
-The exe installs itself into `%ProgramFiles%\LapseZero Agent`, enrolls the host, and starts the automatic `LapseZeroAgent` Windows service as LocalSystem. SCM restarts the service after failures. Configuration and recovery state live under `%ProgramData%\LapseZero Agent`, accessible only to SYSTEM and Administrators. Logs go to Windows Event Viewer → Windows Logs → Application, source `LapseZeroAgent`.
+### Supported sites
 
-Discovery reads local `applicationHost.config` directly. Choose an existing site and HTTPS binding in the console. Each target must have an exact SNI hostname and an exclusive HTTP.sys hostname:port mapping, using its current LocalMachine My or WebHosting store. Shared SNI mappings (including stopped sites and different binding IPs), exact IP:port shadowing, CCS, shared configuration and nonempty `siteDefaults/bindings` are rejected.
+Each HTTPS binding must have a hostname without wildcards, **Require Server Name Indication** selected, and an SSL certificate in the local computer's **Personal** or **Web Hosting** certificate store. The certificate's private key must be accessible; if it is missing, import the certificate with its private key before scanning again.
 
-A deployment imports the PFX with a persistent, non-exportable machine private key, keeps intermediate certificates in CA, and uses the native HTTP.sys base-record update. It preserves all other base parameters and IIS `sslFlags`, and retains the previous certificate and private key. A single journal records `prepared` before the update and `finished` after a full readback. An interrupted, uncommitted update is rolled back only when the current state exactly matches this attempt's new state; external changes are reported as failures without overwriting them. Finished results are retried until acknowledged or declared stale before another task is polled.
+Automatic renewal is not available when:
 
-TLS verification uses the binding's IP (127.0.0.1 for a wildcard), port and SNI hostname. Its result is reported separately and does not undo a committed deployment. After a restart, a committed result's TLS check is repeated before reporting.
+- another binding uses the same hostname and port, even on a different IP address or a stopped site;
+- an HTTPS binding assigns a certificate by IP address on that port, so visitors may receive that certificate instead;
+- the binding uses Centralized Certificate Store, or IIS uses shared configuration or default site bindings.
 
-To upgrade, run the same download-and-install command. An existing service is stopped, its exe replaced and restarted; configuration, credentials and recovery state are kept, and the token is not consumed again. Windows `update` is explicitly unsupported.
+The console shows why a binding cannot be selected. Fix the issue in IIS and scan again.
+
+### Certificate updates
+
+The agent replaces the selected binding's certificate without restarting IIS or changing other site settings. Websites keep serving traffic, and old certificates and their private keys are kept on the server.
+
+If an update fails or is interrupted, the agent restores the previous certificate where possible. It leaves changes made by someone else untouched. The console reports the outcome and any action you need to take; if the old certificate could not be restored, check the binding's certificate in IIS promptly.
+
+After deployment, the agent checks which certificate IIS is serving. This result appears separately from the deployment result. If IIS serves a different certificate, check the certificate selected for that binding.
+
+Logs are in **Windows Event Viewer → Windows Logs → Application**, under source **LapseZeroAgent**.
+
+### Updates and removal
+
+Windows agents do not update automatically. To upgrade, run the same install command again as Administrator. Your settings are kept, and you do not need to add the server again.
+
+To uninstall, open PowerShell as Administrator and run:
 
 ```powershell
 & "$env:ProgramFiles\LapseZero Agent\lapsezero-agent.exe" uninstall
 ```
 
-Uninstall stops and removes the service and deletes configuration and recovery state, including unfinished recovery. It prints the command to delete the remaining exe. Credential revocation stops the service without a restart loop.
+This stops and removes the agent without changing IIS settings or installed certificates. Follow the command's instructions to delete the remaining program file.
 
 ## Build
 
