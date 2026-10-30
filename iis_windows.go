@@ -23,7 +23,15 @@ var errIISSharedConfig = errors.New("SHARED_CONFIG")
 
 func supportedIISOS() bool {
 	v := windows.RtlGetVersion()
-	return runtime.GOARCH == "amd64" && v.MajorVersion == 10 && v.BuildNumber == 20348 && v.ProductType != 1
+	if runtime.GOARCH != "amd64" || v.MajorVersion != 10 || v.ProductType == 1 {
+		return false
+	}
+	// 只放行实机验收过的版本：Server 2016、2019、2022、2025
+	switch v.BuildNumber {
+	case 14393, 17763, 20348, 26100:
+		return true
+	}
+	return false
 }
 
 func readIISBindings() ([]iisBinding, error) {
@@ -106,7 +114,7 @@ func (a *agent) scan(req scanRequest) {
 
 func readIISSelection(siteID uint64, information string) (*iisSnapshot, *x509.Certificate, error) {
 	if !supportedIISOS() {
-		return nil, nil, errors.New("UNSUPPORTED_OS: requires Windows Server 2022 amd64")
+		return nil, nil, errors.New("UNSUPPORTED_OS: requires Windows Server 2016, 2019, 2022 or 2025 amd64")
 	}
 	bindings, err := readIISBindings()
 	if err != nil {

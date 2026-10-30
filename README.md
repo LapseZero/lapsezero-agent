@@ -44,7 +44,7 @@ Logs go to the journal: `journalctl -u lapsezero-agent`.
 
 ## Windows IIS
 
-Use the Windows agent with **Windows Server 2022 x64** and IIS on the same server.
+Use the Windows agent with **Windows Server 2016, 2019, 2022 or 2025 x64** and IIS on the same server.
 
 1. Add an agent in the LapseZero console and choose Windows.
 2. Open PowerShell as Administrator on the server and run the install command shown in the console.
@@ -97,4 +97,4 @@ go test ./...
 
 Tag the version and run `VERSION=<tag> ./build.sh`. It signs `SHA256SUMS` with the release key at `~/.config/lapsezero/agent-signing.key` (override with `SIGNING_KEY`); agents only auto-update to releases signed with that key. Upload the binaries, `SHA256SUMS` and `SHA256SUMS.sig` to the same tag on both GitHub and Gitee, then upload `dist/github/install.sh` to GitHub and `dist/gitee/install.sh` to Gitee, each as `install.sh`. Each script has its own release URL built in and downloads the binary and `SHA256SUMS` from there, so uploading the wrong one sends users to the other platform.
 
-Linux requires systemd. Windows targets Server 2022 amd64. Licensed under MIT.
+Linux requires systemd. Windows targets Server 2016, 2019, 2022 and 2025 amd64. Licensed under MIT.
