@@ -27,6 +27,7 @@ var nginxFallbackPaths = []string{
 
 // 与平台 agentScanResultSchema 一致。只上报路径和公开证书信息，不读取私钥内容
 type scanResult struct {
+	IIS           *iisScan   `json:"iis,omitempty"`
 	Status        string     `json:"status"`
 	Error         string     `json:"error,omitempty"`
 	ReloadCommand string     `json:"reloadCommand"`

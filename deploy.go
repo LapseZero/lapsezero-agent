@@ -11,11 +11,12 @@ import (
 
 // 与平台 agentResultSchema 一致
 type result struct {
-	Status  string   `json:"status"`
-	Error   string   `json:"error,omitempty"`
-	Files   []string `json:"files,omitempty"`
-	Message string   `json:"message,omitempty"`
-	// 只在部署成功时带上；nil 表示没有可检查的 Nginx 站点
+	IIS     *iisResult `json:"iis,omitempty"`
+	Status  string     `json:"status"`
+	Error   string     `json:"error,omitempty"`
+	Files   []string   `json:"files,omitempty"`
+	Message string     `json:"message,omitempty"`
+	// 只在部署成功时带上；nil 表示没有可检查的站点
 	LiveCheck *liveCheck `json:"liveCheck,omitempty"`
 }
 
@@ -30,13 +31,17 @@ type backup struct {
 	Content []byte `json:"content,omitempty"`
 }
 
-// journal 在写文件前落盘，进程崩溃后据此把文件恢复成原内容
+// journal 在修改部署目标前落盘，进程崩溃后由平台恢复入口处理。
 type journal struct {
-	AttemptID   string   `json:"attemptId"`
-	Phase       string   `json:"phase"` // applying | finished
-	PostCommand string   `json:"postCommand,omitempty"`
-	Backups     []backup `json:"backups,omitempty"`
-	Result      *result  `json:"result,omitempty"`
+	Snapshot           *iisSnapshot `json:"snapshot,omitempty"`
+	NewHash            []byte       `json:"newHash,omitempty"`
+	NewStore           *string      `json:"newStore,omitempty"`
+	BindingInformation string       `json:"bindingInformation,omitempty"`
+	AttemptID          string       `json:"attemptId"`
+	Phase              string       `json:"phase"` // Linux: applying | finished; IIS: prepared | finished
+	PostCommand        string       `json:"postCommand,omitempty"`
+	Backups            []backup     `json:"backups,omitempty"`
+	Result             *result      `json:"result,omitempty"`
 }
 
 type journalStore struct{ path string }

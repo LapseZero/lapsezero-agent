@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ type taskFile struct {
 }
 
 type task struct {
+	Type        string     `json:"type"`
+	IIS         *iisTask   `json:"iis"`
 	AttemptID   string     `json:"attemptId"`
 	Label       string     `json:"label"`
 	Files       []taskFile `json:"files"`
@@ -63,6 +66,7 @@ type apiError struct {
 func (e *apiError) Error() string { return fmt.Sprintf("%s (code %d)", e.Message, e.Code) }
 
 type client struct {
+	ctx        context.Context
 	server     string
 	credential string
 	poller     *http.Client
@@ -71,6 +75,7 @@ type client struct {
 
 func newClient(server, credential string) *client {
 	return &client{
+		ctx:        context.Background(),
 		server:     strings.TrimRight(server, "/"),
 		credential: credential,
 		// 超时要比平台的最长挂起时间长，否则会在领取后丢掉响应
@@ -84,7 +89,7 @@ func (c *client) call(hc *http.Client, path string, body any, out any) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, c.server+"/api/agent/v1"+path, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(c.ctx, http.MethodPost, c.server+"/api/agent/v1"+path, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
