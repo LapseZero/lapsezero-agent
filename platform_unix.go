@@ -8,13 +8,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
 const defaultConfigPath = "/etc/lapsezero-agent/config.json"
 const defaultStateDir = "/var/lib/lapsezero-agent"
 
+const releaseBinary = "lapsezero-agent-linux-" + runtime.GOARCH
+
 func platformCommand(string, []string) bool { return false }
+
+func replaceExe(src, exe string) error { return os.Rename(src, exe) }
 
 func cmdRun(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)

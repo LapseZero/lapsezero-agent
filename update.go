@@ -19,7 +19,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +28,7 @@ import (
 var releasePublicKey = "xpNHsV9Ve9IKSfrMHJCpsWjZ2HIO97hw9DmS+zWzwHo="
 
 const (
-	// 新版本连续启动这么多次都没能确认就换回旧版本；systemd 每 10 秒重启一次
+	// 新版本连续启动这么多次都没能确认就换回旧版本；systemd 每 10 秒、Windows 服务每 30 秒重启一次
 	maxUpdateStarts = 3
 	// 新版本启动后这么久还没和平台通上话，也换回旧版本
 	updateConfirmTimeout = 5 * time.Minute
@@ -40,7 +39,7 @@ const (
 	maxBinarySize    = 100 << 20
 )
 
-// 退出码 0 让 systemd 重启进程（Restart=always），由新的二进制接着运行
+// 退出后由新的二进制接着运行：systemd 配置了 Restart=always；Windows 服务进程未报告停止就退出算作故障，由服务的恢复操作重启
 const exitRestart = 0
 
 // 平台在客户端版本落后时随 poll 响应下发
@@ -95,7 +94,12 @@ func newUpdater(stateDir string) (*updater, error) {
 func (u *updater) markerPath() string { return filepath.Join(u.stateDir, "update.json") }
 func (u *updater) failedPath() string { return filepath.Join(u.stateDir, "update-failed.json") }
 func (u *updater) prevPath() string   { return u.exe + ".prev" }
-func (u *updater) newPath() string    { return u.exe + ".new" }
+
+// 保留扩展名，Windows 才会把它当可执行文件运行
+func (u *updater) newPath() string {
+	ext := filepath.Ext(u.exe)
+	return strings.TrimSuffix(u.exe, ext) + ".new" + ext
+}
 
 // 启动时调用，必须早于任何可能崩溃的初始化。连续启动失败时换回旧版本并退出，不会返回
 func (u *updater) checkPending() error {
@@ -145,7 +149,7 @@ func (u *updater) rollback(m updateMarker, reason string) {
 	if err := writeJSON(u.failedPath(), failedUpdate{Version: m.To, At: time.Now()}); err != nil {
 		log.Fatalf("record failed update: %v", err)
 	}
-	if err := os.Rename(u.prevPath(), u.exe); err != nil {
+	if err := replaceExe(u.prevPath(), u.exe); err != nil {
 		log.Fatalf("restore previous binary: %v", err)
 	}
 	if err := removeIfExists(u.markerPath()); err != nil {
@@ -161,7 +165,7 @@ func (u *updater) clearPending() error {
 	return removeIfExists(u.markerPath())
 }
 
-// 只在空闲时调用。更新成功会退出进程，由 systemd 用新二进制重启
+// 只在空闲时调用。更新成功会退出进程，由服务管理器用新二进制重启
 func (u *updater) apply(info updateInfo) {
 	if !versionNewer(info.Version, version) || time.Now().Before(u.nextTry) {
 		return
@@ -191,13 +195,12 @@ func (u *updater) apply(info updateInfo) {
 }
 
 func (u *updater) install(target, releaseURL string) error {
-	binary := "lapsezero-agent-linux-" + runtime.GOARCH
-	expected, err := u.verifiedChecksum(releaseURL, binary)
+	expected, err := u.verifiedChecksum(releaseURL, releaseBinary)
 	if err != nil {
 		return err
 	}
 	defer removeIfExists(u.newPath())
-	if err := u.download(releaseURL+"/"+binary, u.newPath(), expected); err != nil {
+	if err := u.download(releaseURL+"/"+releaseBinary, u.newPath(), expected); err != nil {
 		return err
 	}
 	// 签名的二进制自己报出的版本才可信，也能挡住拿旧版本冒充新版本
@@ -216,7 +219,7 @@ func (u *updater) install(target, releaseURL string) error {
 	if err := writeJSON(u.markerPath(), updateMarker{From: version, To: target}); err != nil {
 		return err
 	}
-	if err := os.Rename(u.newPath(), u.exe); err != nil {
+	if err := replaceExe(u.newPath(), u.exe); err != nil {
 		if err := u.clearPending(); err != nil {
 			log.Printf("clear update record: %v", err)
 		}

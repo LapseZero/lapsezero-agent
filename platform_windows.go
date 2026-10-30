@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ var defaultConfigPath = filepath.Join(dataDir, "config.json")
 var defaultStateDir = filepath.Join(dataDir, "state")
 var installedExe = filepath.Join(os.Getenv("ProgramFiles"), "LapseZero Agent", "lapsezero-agent.exe")
 
+const releaseBinary = "lapsezero-agent-windows-" + runtime.GOARCH + ".exe"
+
 func platformCommand(command string, args []string) bool {
 	switch command {
 	case "install":
@@ -31,8 +34,6 @@ func platformCommand(command string, args []string) bool {
 			log.Fatal(err)
 		}
 		return true
-	case "update":
-		log.Fatal("automatic updates are unsupported on Windows; download the release exe and run install to upgrade")
 	}
 	return false
 }
@@ -65,6 +66,13 @@ func runWindows(ctx context.Context) error {
 		return err
 	}
 	defer unlock()
+	up, err := newUpdater(defaultStateDir)
+	if err != nil {
+		return err
+	}
+	if err := up.checkPending(); err != nil {
+		return err
+	}
 	cfg, err := loadConfig(defaultConfigPath)
 	if err != nil {
 		return err
@@ -75,7 +83,7 @@ func runWindows(ctx context.Context) error {
 	defer httpTerminate.Call(2, 0)
 	c := newClient(cfg.Server, cfg.Credential)
 	c.ctx = ctx
-	a := agent{client: c, journal: journalStore{path: filepath.Join(defaultStateDir, "journal.json")}, info: hostInfo()}
+	a := agent{client: c, journal: journalStore{path: filepath.Join(defaultStateDir, "journal.json")}, info: hostInfo(), updater: up}
 	log.Printf("lapsezero-agent %s started, server %s", version, cfg.Server)
 	return a.run()
 }
@@ -231,6 +239,10 @@ func installWindows(args []string) error {
 	if err := copyFile(source, installedExe); err != nil {
 		return err
 	}
+	// 和 install.sh 一样，重装的版本就是用户要的版本，不再按未确认的更新记录换回旧版
+	if err := (&updater{exe: installedExe, stateDir: defaultStateDir}).clearPending(); err != nil {
+		return err
+	}
 	if !existing {
 		credential, err := newClient(*server, "").enroll(*token, hostInfo())
 		if err != nil {
@@ -290,6 +302,24 @@ func uninstallWindows() error {
 	if err := eventlog.Remove(serviceName); err != nil && !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
 		return err
 	}
-	fmt.Printf("Service and data removed. Delete the executable with: Remove-Item -LiteralPath '%s'\n", installedExe)
+	fmt.Printf("Service and data removed. Delete the program files with: Remove-Item -LiteralPath '%s' -Recurse\n", filepath.Dir(installedExe))
+	return nil
+}
+
+// 运行中的 exe 不能被覆盖，但可以改名：先把它挪到 .old，再把新文件改名过来。挪走的那个可能还在运行，所以 .old 留到下次替换时再删
+func replaceExe(src, exe string) error {
+	old := strings.TrimSuffix(exe, ".exe") + ".old.exe"
+	if err := removeIfExists(old); err != nil {
+		return err
+	}
+	if err := os.Rename(exe, old); err != nil {
+		return err
+	}
+	if err := os.Rename(src, exe); err != nil {
+		if restoreErr := os.Rename(old, exe); restoreErr != nil {
+			return fmt.Errorf("%w; restore %s: %v", err, exe, restoreErr)
+		}
+		return err
+	}
 	return nil
 }

@@ -81,8 +81,6 @@ func (a *agent) run() error {
 			if resp.Update != nil {
 				if a.updater != nil {
 					a.updater.apply(*resp.Update)
-				} else {
-					log.Print("automatic updates are unsupported on Windows; run install to upgrade")
 				}
 			}
 			wait := time.Duration(resp.RetryAfterMs) * time.Millisecond

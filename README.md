@@ -76,7 +76,7 @@ Logs are in **Windows Event Viewer → Windows Logs → Application**, under sou
 
 ### Updates and removal
 
-Windows agents do not update automatically. To upgrade, run the same install command again as Administrator. Your settings are kept, and you do not need to add the server again.
+From v0.9.0 the Windows agent updates itself the same way as on Linux: it verifies the signed release, keeps the current binary as `lapsezero-agent.exe.prev`, swaps in the new one and lets the service restart it, switching back if the new version doesn't come up. Earlier versions need one manual upgrade: run the same install command again as Administrator. Reinstalling this way also works at any time; your settings are kept, and you do not need to add the server again.
 
 To uninstall, open PowerShell as Administrator and run:
 
@@ -84,7 +84,7 @@ To uninstall, open PowerShell as Administrator and run:
 & "$env:ProgramFiles\LapseZero Agent\lapsezero-agent.exe" uninstall
 ```
 
-This stops and removes the agent without changing IIS settings or installed certificates. Follow the command's instructions to delete the remaining program file.
+This stops and removes the agent without changing IIS settings or installed certificates. Follow the command's instructions to delete the remaining program files.
 
 ## Build
 
