@@ -61,6 +61,9 @@ func (a *agent) execute(t task) error {
 	}
 	if t.NPM == nil && err == nil && r.Status == "SUCCESS" {
 		r.LiveCheck = checkLive(files)
+		if r.LiveCheck == nil {
+			r.LiveCheck = checkApacheLive(files)
+		}
 	}
 	close(stop)
 	if err != nil {
@@ -107,12 +110,16 @@ func (a *agent) executeOnePanel(t task) {
 func (a *agent) scan(req scanRequest) {
 	r := scanNginx()
 	r.NPM = scanNpm(req.NPMCredentials)
-	if len(r.NPM) > 0 && r.Error == "NGINX_NOT_FOUND" {
+	r.Apache = scanApache()
+	if (len(r.NPM) > 0 || r.Apache != nil) && r.Error == "NGINX_NOT_FOUND" {
 		r.Status = "SUCCESS"
 		r.Error = ""
 		r.Sites = []scanSite{}
 	}
 	log.Printf("nginx scan finished: %s %s (%d sites)", r.Status, r.Error, len(r.Sites))
+	if r.Apache != nil {
+		log.Printf("apache scan finished: %s %s (%d sites)", r.Apache.Status, r.Apache.Error, len(r.Apache.Sites))
+	}
 	if addr := onePanelAddress(); addr != "" {
 		r.OnePanel = scanOnePanel(addr, req.OnePanelAPIKey)
 		log.Printf("1Panel scan finished: %s %s (%d sites)", r.OnePanel.Status, r.OnePanel.Message, len(r.OnePanel.Sites))

@@ -35,6 +35,8 @@ type scanResult struct {
 	// 本机运行着 1Panel 时才有
 	OnePanel *onePanelScan `json:"onePanel,omitempty"`
 	NPM      []npmScan     `json:"npm,omitempty"`
+	// 本机有 Apache 进程时才有
+	Apache *apacheScan `json:"apache,omitempty"`
 }
 
 type scanSite struct {
